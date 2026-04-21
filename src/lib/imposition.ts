@@ -1,9 +1,19 @@
-import { PDFDocument, PageSizes } from 'pdf-lib';
+import { PDFDocument, PageSizes, PDFName } from 'pdf-lib';
 
 export async function imposePdf(fileBuffer: ArrayBuffer, sheetsPerSig: number, binding: 'left' | 'right') {
   const srcDoc = await PDFDocument.load(fileBuffer);
   const srcPages = srcDoc.getPages();
   const totalSrcPages = srcPages.length;
+  
+  // Fix pages with missing Contents
+  for (let i = 0; i < srcPages.length; i++) {
+    const page = srcPages[i];
+    if (!page.node.has(PDFName.of('Contents'))) {
+      const emptyStream = srcDoc.context.flateStream('');
+      const streamRef = srcDoc.context.register(emptyStream);
+      page.node.set(PDFName.of('Contents'), streamRef);
+    }
+  }
   
   const pagesPerSig = sheetsPerSig * 4;
   const numSigs = Math.ceil(totalSrcPages / pagesPerSig);
@@ -15,7 +25,16 @@ export async function imposePdf(fileBuffer: ArrayBuffer, sheetsPerSig: number, b
   const outHeight = PageSizes.A4[0];
   const halfWidth = outWidth / 2;
   
-  const embeddedPages = await outDoc.embedPages(srcPages);
+  const embeddedPages: any[] = [];
+  for (let i = 0; i < srcPages.length; i++) {
+    try {
+      const embeddedPage = await outDoc.embedPage(srcPages[i]);
+      embeddedPages.push(embeddedPage);
+    } catch (e) {
+      console.warn(`Could not embed page ${i + 1}:`, e);
+      embeddedPages.push(null);
+    }
+  }
   
   for (let sig = 0; sig < numSigs; sig++) {
     const sigStart = sig * pagesPerSig;
@@ -43,19 +62,21 @@ export async function imposePdf(fileBuffer: ArrayBuffer, sheetsPerSig: number, b
          const actualIdx = sigStart + srcIdx0;
          if (actualIdx < totalSrcPages) {
            const embeddedPage = embeddedPages[actualIdx];
-           const scale = Math.min(halfWidth / embeddedPage.width, outHeight / embeddedPage.height);
-           const scaledWidth = embeddedPage.width * scale;
-           const scaledHeight = embeddedPage.height * scale;
-           
-           const xOffset = isLeft ? (halfWidth - scaledWidth) / 2 : halfWidth + (halfWidth - scaledWidth) / 2;
-           const yOffset = (outHeight - scaledHeight) / 2;
-           
-           outPage.drawPage(embeddedPage, {
-             x: xOffset,
-             y: yOffset,
-             width: scaledWidth,
-             height: scaledHeight,
-           });
+           if (embeddedPage) {
+             const scale = Math.min(halfWidth / embeddedPage.width, outHeight / embeddedPage.height);
+             const scaledWidth = embeddedPage.width * scale;
+             const scaledHeight = embeddedPage.height * scale;
+             
+             const xOffset = isLeft ? (halfWidth - scaledWidth) / 2 : halfWidth + (halfWidth - scaledWidth) / 2;
+             const yOffset = (outHeight - scaledHeight) / 2;
+             
+             outPage.drawPage(embeddedPage, {
+               x: xOffset,
+               y: yOffset,
+               width: scaledWidth,
+               height: scaledHeight,
+             });
+           }
          }
       };
       
