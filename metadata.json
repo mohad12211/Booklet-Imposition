@@ -1,5 +1,6 @@
 {
-  "name": "",
+  "name": "Booklet Imposition",
   "description": "",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }
