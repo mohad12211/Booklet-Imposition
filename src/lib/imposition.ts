@@ -28,7 +28,17 @@ export async function imposePdf(fileBuffer: ArrayBuffer, sheetsPerSig: number, b
   const embeddedPages: any[] = [];
   for (let i = 0; i < srcPages.length; i++) {
     try {
-      const embeddedPage = await outDoc.embedPage(srcPages[i]);
+      // Use the CropBox as the embedding bounding box so that pages cropped
+      // via CropBox (from any tool) are treated as their visible region.
+      // getCropBox() falls back to MediaBox when no CropBox is set, so this
+      // is always safe for non-cropped PDFs.
+      const crop = srcPages[i].getCropBox();
+      const embeddedPage = await outDoc.embedPage(srcPages[i], {
+        left:   crop.x,
+        bottom: crop.y,
+        right:  crop.x + crop.width,
+        top:    crop.y + crop.height,
+      });
       embeddedPages.push(embeddedPage);
     } catch (e) {
       console.warn(`Could not embed page ${i + 1}:`, e);
